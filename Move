@@ -1,5 +1,4 @@
 
-math.randomseed(os.time() + os.clock() * 100000)
 local bot = getBot()
 local bots = #getBots()
 
