@@ -1,1 +1,661 @@
-print('MEMEK')
+
+math.randomseed(os.time() + os.clock() * 100000)
+local bot = getBot()
+local bots = #getBots()
+
+local storageTake = {}
+local storageDrop = {}
+local itemID = {}
+local saveItemID = {}
+local collectMessageID = {}
+local storeMessageID = {}
+local messageID = {}
+
+local nuked = false
+local wrong = false
+local avatarUrl = 'https://cdn.discordapp.com/attachments/1137217694589001859/1318778973739679774/Handwritten_Love_Poster_in_White_Black_Background_20241218_101600_0000.png?ex=67639021&is=67623ea1&hm=109cfe9dac9edf4416c9ac6cd695a2725553c35ecec0d43f5561016ab3b5f9b8&'
+local collectID = 'collectIDs.txt'
+local storeID = 'storeIDs.txt'
+
+bot.auto_reconnect = true
+bot.reconnect_interval = delayReconnect
+bot.random_reconnect = false
+bot.auto_collect = false
+
+local message = {
+    NUKED = '%s may have been NUKED.',
+    WRONG = '%s may have the wrong door ID.'
+}
+
+local function writeFile(filePath, content)
+    local file = io.open(filePath, 'a+')
+    if file then
+        file:write(content .. '\n')
+        file:close()
+    end
+end
+
+local function fileExists(fileName)
+    local file = io.open(fileName, "r")
+    if file then
+        file:close()
+        return true
+    else
+        return false
+    end
+end
+
+local function deleteFile(fileName)
+    local result, reason = os.remove(fileName)
+    if result then
+        print(fileName .. " was deleted successfully.")
+    else
+        print("Error deleting " .. fileName .. ": " .. reason)
+    end                                                                                                             
+end
+
+local function readFile(fileName)
+    local tbl = {}
+    local file = io.open(fileName, 'r')
+    if file then
+        for line in file:lines() do
+            table.insert(tbl, line)
+        end
+        file:close()
+        return tbl
+    else
+        error('Failed to open file : ' .. fileName)
+    end
+end
+
+local function selectWorld()
+    if storage.take.useFile.enabled then
+        local assign = readFile(storage.take.useFile.filePath)
+        if assign then
+            for i, world in ipairs(assign) do
+                table.insert(storageTake, world)
+            end
+        end
+    else
+        for i, world in ipairs(storage.take.world) do
+            table.insert(storageTake, world)
+        end
+    end
+
+    if storage.drop.useFile.enabled then
+        local assign = readFile(storage.drop.useFile.filePath)
+        if assign then
+            for i, world in ipairs(assign) do
+                table.insert(storageDrop, world)
+            end
+        end
+    else
+        for i, world in ipairs(storage.drop.world) do
+            table.insert(storageDrop, world)
+        end
+    end
+end
+
+local function spreadValue(tbl, result)
+    for _, item in pairs(tbl) do
+        for _, value in pairs(item.id) do
+            table.insert(result, {id = value, limit = item.limit, amount = item.amount})
+        end
+    end
+    return result
+end
+
+local function round(num)
+    return num % 1 > 0.5 and math.ceil(num) or math.floor(num)
+end
+
+local function writeConsole(description)
+    return bot:getLog():append(description)
+end
+
+local function backpack(id)
+    return bot:getInventory():getItemCount(id)
+end
+
+local function spreadValue(tbl, result)
+    for _, item in pairs(tbl) do
+        for _, value in pairs(item.id) do
+            table.insert(result, {id = value, limit = item.limit, amount = item.amount})
+        end
+    end
+    return result
+end
+
+local function isCanFindpath(x, y)
+    return (#bot:getPath(x, y) > 0 or bot:isInTile(x, y))
+end
+
+local function createMessageID(url, content, fileNames)
+    if url ~= '' then
+        url = url .. '?wait=1'
+        local http = HttpClient.new()
+        http.url = url
+        http.headers['Content-Type'] = 'application/json'
+        http:setMethod(Method.post)
+        http.content = [[
+        {
+            "username":"CRUS4DER",
+            "embeds": [
+                {
+                    "title":"]] .. content .. [[",
+                    "color": ]] .. math.random(111111, 999999) .. [[
+                }
+            ]
+        }
+    ]]
+        local result = http:request()
+        if result.error == 0 then
+            local resultData = result.body:match('"id"%s*:%s*"([^"]+)"')
+            if resultData and fileNames then
+                writeFile(fileNames, resultData)
+            end
+            return resultData
+        else
+            print("Request Error: " .. result:getError())
+        end
+        return nil
+    end
+    return nil
+end
+
+function createWebhook(botIndex, totalBots)
+    local whUrl = linkBotView
+    local whCount = math.ceil(totalBots / maxBotPerWebhook)
+    for i = 1, whCount do
+        local startBot = (i - 1) * maxBotPerWebhook + 1
+        local endBot = math.min(i * maxBotPerWebhook, totalBots)
+        if botIndex == startBot then
+            local messageIDs = createMessageID(linkBotView, 'Creating message for Bot List')
+            if messageIDs then
+                table.insert(messageID, messageIDs)
+            end
+        end
+    end
+end
+
+local function itemFloat(id)
+    return getWorld().growscan:getObjects()[id] or 0
+end
+
+local function notifications(description)
+    messageBox = MessageBox.new()
+    messageBox.title = 'CRUS4DER | Script Store'
+    messageBox.description = description
+    messageBox:send()
+end
+
+local function split(str, ptr)
+    if not ptr then
+        ptr = '%s'
+    end
+    local tbl = {}
+    for string in string.gmatch(str, ptr) do
+        table.insert(tbl, string)
+    end
+    return tbl
+end
+
+local function worldData(case)
+    local str = ''
+    local data = {}
+    local dialog = ''
+    if case == 'take' then
+        data = storageTake
+        dialog = 'No worlds available for taking items.'
+    elseif case == 'drop' then
+        data = storageDrop
+        dialog = 'No worlds available for dropping items.'
+    end
+    if #data == 0 then
+        return dialog
+    else
+        for i = 1, #data do
+            if case == 'take' or case == 'drop' then
+                local world = split(data[i], '[^:]+')[1]
+                str = str .. '\n||' .. world .. '||'
+            end
+        end
+    end
+    return str
+end
+
+local function scanObjects()
+    local growscan = getBot():getWorld().growscan
+    local str = ''
+    for _, v in pairs(itemID) do
+        for id, count in pairs(growscan:getObjects()) do
+            if id == v.id then
+                str = str .. "\n" .. getInfo(id).name .. " : " .. count .. ' x'
+            end
+        end
+    end
+    return str
+end
+
+local function formatStatus(plr)
+    for i, v in pairs(BotStatus) do
+        if v == plr.status then
+            return tostring(i:gsub("_", " "):gsub("^%l", string.upper))
+        end
+    end
+    return "Unknown"
+end
+
+local function emojiRecon(plr)
+    if plr.status == BotStatus.online then
+        return "<a:online:1235638419284037763>"
+    end
+    return "<a:offline:1238731608220237845>"
+end
+
+local function infoWorld(maxBotPerWebhook)
+    local estimate = ''
+    local startBot = ((math.ceil(bot.index / maxBotPerWebhook) - 1) * maxBotPerWebhook) + 1
+    local endBot = startBot + maxBotPerWebhook - 1
+    for _, name in pairs(getBots()) do
+        if name.index >= startBot and name.index <= endBot then
+            estimate = estimate .. '\n**['..name.index..'] '..name.name..'**\nTask : '..name.custom_status..'\nLevel : '..name.level..'\nCurrent World : '..getWorld().name..'\nStatus : '..emojiRecon(name)..''..formatStatus(name)..''
+        end
+    end
+    return estimate
+end
+
+local function botStatic()
+    if linkBotView ~= 'x' then
+        for _, message in pairs(messageID) do
+            local webhook = Webhook.new(linkBotView)
+            webhook.avatar_url = avatarUrl
+            webhook.username = "CRUS4DER"
+            webhook.embed1.use = true
+            webhook.embed1.color = math.random(111111, 999999)
+            webhook.embed1.title = "Bots View"
+            webhook.embed1.thumbnail = avatarUrl
+            webhook.embed1.description = "**Last Update: <t:" .. os.time() .. ":R>\nTotal Bot : "..bots.."\nScript : Auto Move WTW**"
+            local fields = {
+                { name = 'Bot Static' , value = infoWorld(maxBotPerWebhook), inline = false},
+            }
+            for _, field in pairs(fields) do
+                webhook.embed1:addField(field.name, field.value, field.inline)
+            end
+            webhook.embed1.footer.text = 'Script developed By CRUS4DER'
+            webhook.embed1.timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+            webhook:edit(message)
+        end
+    end
+end
+
+local function botInfo(messageIdInfo, enabledState)
+    botStatic()
+    if linkStorageInfo ~= 'x' then
+        for _, message in pairs(messageIdInfo) do
+            local webhook = Webhook.new(linkStorageInfo)
+            local world
+            webhook.username = "CRUS4DER"
+            webhook.embed1.use = true
+            if enabledState then
+                webhook.embed1.title = 'STORAGE TAKE | MOVE WTW'
+                world = worldData('take')
+            else
+                webhook.embed1.title = 'STORAGE DROP | MOVE WTW'
+                world = worldData('drop')
+            end
+            webhook.embed1.color = math.random(111111, 999999)
+            webhook.embed1.thumbnail = avatarUrl
+            webhook.embed1:addField('<:MONITOR:1033601526993793095>Last Visited', bot.name, false)
+            webhook.embed1:addField('<:scrollbulletin:1228977435668910151>Storage', world, false)
+            webhook.embed1:addField('<:smallseedpack:1233810600703033374>Last Storage Visited ['..getWorld().name..']',scanObjects(), false)
+            webhook.embed1.footer.icon_url = avatarUrl
+            webhook.embed1.footer.text = 'Updated : '..(os.date('!%a, %b %d %Y at %I:%M %p', os.time() + 7 * 60 * 60))..'\nScript developed By CRUS4DER'
+            webhook:edit(message)
+        end
+    end
+end
+
+local function botSend(text)
+    if webhookStatusLink ~= 'x'  then
+        local webhook = Webhook.new(webhookStatusLink)
+        if tagDiscord then
+            webhook.content = '@everyone'
+        end
+        webhook.username = "CRUS4DER"
+        webhook.embed1.use = true
+        webhook.embed1:addField('BOT INFORMATION', bot.name.. ' slot-' .. bot.index .. ' : **'..text..'**', false)
+        webhook.embed1.footer.text = 'Updated : '..(os.date('!%a %b %d, %Y at %I:%M %p', os.time() + 7 * 60 * 60))..''
+        webhook:send()
+    end
+end
+
+local function reconnect()
+    if bot.status ~= BotStatus.online then
+        writeConsole(bot.name.. ' (slot-' .. bot.index .. ') status is ' .. formatStatus(bot))
+        botSend('status is ' .. formatStatus(bot).. ''..emojiRecon(bot))
+        botStatic()
+        while bot.status ~= BotStatus.online do
+            sleep(10000)
+            if bot.status == BotStatus.account_banned then
+                bot.auto_reconnect = false
+                writeConsole(bot.name.. ' (slot-' .. bot.index .. ') status is ' .. formatStatus(bot))
+                botSend('status is ' .. formatStatus(bot).. ''..emojiRecon(bot))
+            elseif bot.status == BotStatus.maintenance then
+                bot.auto_reconnect = false
+                writeConsole(bot.name.. ' (slot-' .. bot.index .. ') status is ' .. formatStatus(bot))
+                botSend('status is ' .. formatStatus(bot).. ''..emojiRecon(bot))
+                sleep(60000 * delayMaintenance)
+                bot.auto_reconnect = true
+            end
+        end
+        writeConsole(bot.name.. ' (slot-' .. bot.index .. ') status is ' .. formatStatus(bot))
+        botSend('status is ' .. formatStatus(bot).. ''..emojiRecon(bot))
+        botStatic()
+    end
+end
+
+local function warp(world, id)
+    world = world:upper()
+    id = id or ''
+    nuked, wrong = false, false
+    if not bot:isInWorld(world) then
+        addEvent(Event.variantlist, function(variant, netid)
+            if variant:get(0):getString() == 'OnConsoleMessage' then
+                if variant:get(1):getString():lower():find('inaccessible.') then
+                    nuked = true
+                    unlistenEvents()
+                end
+            end
+        end)
+        local tries = 0
+        while not bot:isInWorld(world) and not nuked do
+            reconnect()
+            bot:sendPacket(3, "action|join_request\nname|" .. (id == '' and world or world .. ('|' .. id)) .. "\ninvitedWorld|0")
+            for i = 1, delayWarp do
+                listenEvents(1)
+                if bot:isInWorld(world) or nuked then
+                    break
+                end
+            end
+            tries = tries + 1
+            if tries % 8 == 0 then
+                writeConsole('Hard warp? resting bot for '..delayHardWarp..' minutes')
+                bot.auto_reconnect = false
+                bot.custom_status = 'Hard Warp'
+                while bot.status ~= BotStatus.offline do
+                    bot:disconnect()
+                    sleep(5000)
+                end
+                sleep(60000 * delayHardWarp)
+                bot.auto_reconnect = true
+            end
+        end
+        removeEvent(Event.variantlist)
+        sleep(1000 * delayWarp)
+    end
+    if bot:isInWorld(world) and id ~= '' then
+        local tries = 0
+        while getTile(bot.x, bot.y).fg == 6 and not wrong do
+            reconnect()
+            bot:warp(id == '' and world or world .. ('|' .. id))
+            for i = 1, delayWarp do
+                sleep(1000)
+                if getTile(bot.x, bot.y).fg ~= 6 then
+                    break
+                end
+            end
+            tries = tries + 1
+            if tries % 5 == 0 then
+                wrong = true
+            end
+        end
+    end
+    if not nuked then
+        if wrong then
+            writeConsole(message.WRONG:format(world))
+        end
+    else
+        writeConsole(message.NUKED:format(world))
+    end
+end
+
+local function reposition(world, id, x, y)
+    if bot.status ~= BotStatus.online then
+        reconnect()
+    end
+    if bot.status == BotStatus.online then
+        warp(world, id)
+        if (x and y) and (bot:isInWorld(world) and isCanFindpath(x, y)) then
+            while not bot:isInTile(x, y) do
+                bot:findPath(x, y)
+                reposition(world, id)
+            end
+        end
+    end
+end
+
+local function tilecache(x, y, num)
+    local count = 0
+    local stack = 0
+    for _, obj in pairs(getObjects()) do
+        local object_x, object_y = math.floor((obj.x + 10) * (1 / 32)), math.floor((obj.y + 10) * (1 / 32))
+        if object_x == x and object_y == y then
+            stack = stack + 1
+            count = count + obj.count
+        end
+    end
+    return stack < 20 and count <= (4000 - num)
+end
+
+local function tiledrop()
+    local tiles = {}
+    for y = dropY, 0, -1 do
+        for x = dropX, 98 do
+            table.insert(tiles, { x = x, y = y })
+        end
+    end
+    return tiles
+end
+
+local function scanEmpty()
+    for _, v in pairs(itemID) do
+        if itemFloat(v.id) >= v.amount then
+            return true
+        end
+    end
+    return false
+end
+
+local function restoreItemID()
+    for i, v in ipairs(saveItemID) do
+        itemID[i].id = v.id
+        itemID[i].limit = v.limit
+        itemID[i].amount = v.amount
+    end
+end
+
+local function takeItem()
+    ::back::
+    if #storageTake == 0 then
+        botInfo(collectMessageID, true)
+        bot:leaveWorld()
+        local dialog = 'No world available for collecting items'
+        writeConsole(dialog)
+        botSend(dialog)
+        bot.custom_status = 'All world has empty'
+        return error(dialog)
+    end
+    bot.custom_status = 'Take items'
+    local index = math.random(#storageTake)
+    local world, door = split(storageTake[index], '[^:]+')[1], split(storageTake[index], '[^:]+')[2]
+    warp(world, door)
+    if not nuked then
+        if not wrong then
+            botInfo(collectMessageID, true)
+            if scanEmpty() then
+                for _, v in ipairs(itemID) do
+                    while backpack(v.id) < v.amount do
+                        local pathFound = false
+                        for _, obj in pairs(getObjects()) do
+                            local targetX, targetY = round(obj.x / 32), math.floor(obj.y / 32)
+                            local canFindpath = isCanFindpath(targetX, targetY)
+                            if obj.id == v.id and canFindpath then
+                                bot:findPath(targetX, targetY)
+                                sleep(500)
+                                bot:collectObject(obj.oid, 3)
+                                sleep(500)
+                                reposition(world, door, targetX, targetY)
+                                pathFound = true
+                                break
+                            end
+                        end
+                        if not pathFound then
+                            break
+                        end
+                    end
+                end
+            else
+                if not looping then
+                    writeConsole(string.upper(world)..' may has empty, removing worlds')
+                    botSend(string.upper(world)..' may has empty, removing worlds')
+                    table.remove(storageTake, index)
+                else
+                    sleep(1000 * delayLooping)
+                end
+                goto back
+            end
+        else
+            table.remove(storageTake, index)
+            goto back
+        end
+    else
+        table.remove(storageTake, index)
+        goto back
+    end
+end
+
+local function scanLimits()
+    for _, v in pairs(itemID) do
+        if itemFloat(v.id) >= v.limit then
+            v.id = 0
+        end
+    end 
+end
+
+local function scanValue()
+    for _, v in pairs(itemID) do
+        if v.id ~= 0 then 
+            return true   
+        end
+    end
+    return false
+end
+
+local function dropItem()
+    ::back::
+    if #storageDrop == 0 then
+        botInfo(storeMessageID, false)
+        bot:leaveWorld()
+        local dialog = 'No storage available for storing items.'
+        writeConsole(dialog)
+        botSend(dialog)
+        bot.custom_status = 'All world has limit'
+        return error(dialog)
+    end
+    bot.custom_status = 'Drop items'
+    local index = math.random(#storageDrop)
+    local world, door = split(storageDrop[index], '[^:]+')[1], split(storageDrop[index], '[^:]+')[2]
+    warp(world, door)
+    if not nuked then
+        if not wrong then
+            restoreItemID()
+            botInfo(storeMessageID, false)
+            scanLimits()
+            if scanValue() then
+                local tiles = tiledrop()
+                local function isItemFinished(v)
+                    return backpack(v.id) == 0
+                end
+                for idx, v in ipairs(itemID) do
+                    if isItemFinished(v) then
+                        goto continueItem
+                    end
+                    for _, tile in pairs(tiles) do
+                        ::retry::
+                        local targetX, targetY = tile.x, tile.y - (idx - 1)
+                        if targetX >= dropX and targetY <= dropY and isCanFindpath(targetX, targetY) and tilecache(targetX + 1, targetY, backpack(v.id)) then
+                            while not bot:isInTile(targetX, targetY) and backpack(v.id) > 0 do
+                                bot:findPath(targetX, targetY)
+                                sleep(500)
+                                reposition(world, door, targetX, targetY)
+                            end
+                            if targetX >= 98 then
+                                dropY = dropY - #itemID
+                                targetX, targetY = dropX, dropY
+                                goto retry
+                            end
+                            while backpack(v.id) > 0 and tilecache(targetX + 1, targetY, backpack(v.id)) and itemFloat(v.id) < v.limit do
+                                bot:setDirection(false)
+                                bot:drop(v.id, backpack(v.id))
+                                sleep(delayDrop)
+                                reposition(world, door, targetX, targetY)
+                            end
+                        end
+                        if isItemFinished(v) then
+                            break
+                        end
+                    end
+                    ::continueItem::
+                end
+            else
+                writeConsole(string.upper(world)..' has reached limit, removing worlds')
+                botSend(string.upper(world)..' has reached limit, removing worlds')
+                table.remove(storageDrop, index)
+                goto back
+            end
+        else
+            table.remove(storageDrop, index)
+            goto back
+        end
+    else
+        table.remove(storageDrop, index)
+        goto back
+    end
+end
+
+local function creatingForMessage()
+    if linkStorageInfo ~= 'x' then
+        if bot.index == 1 then
+            createMessageID(linkStorageInfo, 'Creating messageID for Storage Take', collectID)
+            createMessageID(linkStorageInfo, 'Creating messageID for Storage Drop', storeID)
+        end
+        local collect, store = readFile(collectID), readFile(storeID)
+        for _, id in ipairs(collect) do
+            table.insert(collectMessageID, id)
+        end
+        for _, id in ipairs(store) do
+            table.insert(storeMessageID, id)
+        end
+    end
+end
+
+if scriptInformation == "Script Move developed by CRUS4DER | Script Store, Link Discord : https://discord.gg/etM6H4D84Z" and scriptVersion == "0.1" then
+    spreadValue(itemList, itemID)
+    spreadValue(itemList, saveItemID)
+    if fileExists(collectID) then deleteFile(collectID) end
+    if fileExists(storeID) then deleteFile(storeID) end
+    createWebhook(bot.index, bots)
+    botStatic()
+    selectWorld()
+    reconnect()
+    sleep((bot.index - 1) * (delayExecute * 1000))
+    creatingForMessage()
+    while true do
+        takeItem()
+        dropItem()
+    end
+else
+    sendNotif = true                                    
+    notifications('Buying from reseller? u are idiot people')
+end
