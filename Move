@@ -473,14 +473,17 @@ end
 local function takeItem()
     ::back::
     if #storageTake == 0 then
-        botInfo(collectMessageID, true)
+        bot.custom_status = 'All world has empty'
         bot:leaveWorld()
+        botInfo(collectMessageID, true)
         local dialog = 'No world available for collecting items'
         writeConsole(dialog)
         botSend(dialog)
-        bot.custom_status = 'All world has empty'
         if removingBots then
             removeBot()
+        end
+        if sendNotif then
+            notifications(dialog)
         end
         return error(dialog)
     end
@@ -553,14 +556,17 @@ end
 local function dropItem()
     ::back::
     if #storageDrop == 0 then
-        botInfo(storeMessageID, false)
+        bot.custom_status = 'All world has limit'
         bot:leaveWorld()
+        botInfo(storeMessageID, false)
         local dialog = 'No storage available for storing items.'
         writeConsole(dialog)
         botSend(dialog)
-        bot.custom_status = 'All world has limit'
         if removingBots then
             removeBot()
+        end
+        if sendNotif then
+            notifications(dialog)
         end
         return error(dialog)
     end
