@@ -63,7 +63,7 @@ local function readFile(fileName)
         file:close()
         return tbl
     else
-        error('Failed to open file : ' .. fileName)
+        return error('Failed to open file : ' .. fileName)
     end
 end
 
@@ -154,15 +154,16 @@ local function createMessageID(url, content, fileNames)
 end
 
 local function createWebhook(botIndex, totalBots)
-    local whUrl = linkBotView
-    local whCount = math.ceil(totalBots / maxBotPerWebhook)
-    for i = 1, whCount do
-        local startBot = (i - 1) * maxBotPerWebhook + 1
-        local endBot = math.min(i * maxBotPerWebhook, totalBots)
-        if botIndex == startBot then
-            local messageIDs = createMessageID(linkBotView, 'Creating message for Bot List')
-            if messageIDs then
-                table.insert(messageID, messageIDs)
+    if linkBotView ~= 'x' then
+        local whCount = math.ceil(totalBots / maxBotPerWebhook)
+        for i = 1, whCount do
+            local startBot = (i - 1) * maxBotPerWebhook + 1
+            local endBot = math.min(i * maxBotPerWebhook, totalBots)
+            if botIndex == startBot then
+                local messageIDs = createMessageID(linkBotView, 'Creating message for Bot List')
+                if messageIDs then
+                    table.insert(messageID, messageIDs)
+                end
             end
         end
     end
@@ -243,7 +244,7 @@ local function emojiRecon(plr)
     return "<a:offline:1238731608220237845>"
 end
 
-local function infoWorld(maxBotPerWebhook)
+local function botAction(maxBotPerWebhook)
     local estimate = ''
     local startBot = ((math.ceil(bot.index / maxBotPerWebhook) - 1) * maxBotPerWebhook) + 1
     local endBot = startBot + maxBotPerWebhook - 1
@@ -267,7 +268,7 @@ local function botStatic()
             webhook.embed1.thumbnail = avatarUrl
             webhook.embed1.description = "**Last Update: <t:" .. os.time() .. ":R>\nTotal Bot : "..bots.."\nScript : Auto Move WTW**"
             local fields = {
-                { name = 'Bot Static' , value = infoWorld(maxBotPerWebhook), inline = false},
+                { name = 'Bot Static' , value = botAction(maxBotPerWebhook), inline = false},
             }
             for _, field in pairs(fields) do
                 webhook.embed1:addField(field.name, field.value, field.inline)
@@ -331,6 +332,7 @@ local function reconnect()
                 bot.auto_reconnect = false
                 writeConsole(bot.name.. ' (slot-' .. bot.index .. ') status is ' .. formatStatus(bot))
                 botSend('status is ' .. formatStatus(bot).. ''..emojiRecon(bot))
+                return error('Bot Suspended')
             elseif bot.status == BotStatus.maintenance then
                 bot.auto_reconnect = false
                 writeConsole(bot.name.. ' (slot-' .. bot.index .. ') status is ' .. formatStatus(bot))
@@ -368,12 +370,16 @@ local function warp(world, id)
                     break
                 end
             end
+            sleep(1000 * delayWarp)
             tries = tries + 1
             if tries % 8 == 0 then
-                writeConsole('Hard warp? resting bot for '..delayHardWarp..' minutes')
                 bot.auto_reconnect = false
                 bot.custom_status = 'Hard Warp'
-                while bot.status ~= BotStatus.offline do
+                local dialog = 'Hard warp? resting bot for '..delayHardWarp..' minutes'
+                writeConsole(dialog)
+                botStatic()
+                botSend(dialog)
+                while bot.status == BotStatus.online do
                     bot:disconnect()
                     sleep(5000)
                 end
@@ -382,7 +388,6 @@ local function warp(world, id)
             end
         end
         removeEvent(Event.variantlist)
-        sleep(1000 * delayWarp)
     end
     if bot:isInWorld(world) and id ~= '' then
         local tries = 0
@@ -474,6 +479,9 @@ local function takeItem()
         writeConsole(dialog)
         botSend(dialog)
         bot.custom_status = 'All world has empty'
+        if removingBots then
+            removeBot()
+        end
         return error(dialog)
     end
     bot.custom_status = 'Take items'
@@ -551,6 +559,9 @@ local function dropItem()
         writeConsole(dialog)
         botSend(dialog)
         bot.custom_status = 'All world has limit'
+        if removingBots then
+            removeBot()
+        end
         return error(dialog)
     end
     bot.custom_status = 'Drop items'
@@ -577,7 +588,6 @@ local function dropItem()
                         if targetX >= dropX and targetY <= dropY and isCanFindpath(targetX, targetY) and tilecache(targetX + 1, targetY, backpack(v.id)) then
                             while not bot:isInTile(targetX, targetY) and backpack(v.id) > 0 do
                                 bot:findPath(targetX, targetY)
-                                sleep(500)
                                 reposition(world, door, targetX, targetY)
                             end
                             if targetX >= 98 then
@@ -633,14 +643,16 @@ end
 if scriptInformation == "Script Move developed by CRUS4DER | Script Store, Link Discord : https://discord.gg/etM6H4D84Z" and scriptVersion == "0.1" then
     spreadValue(itemList, itemID)
     spreadValue(itemList, saveItemID)
+
     if fileExists(collectID) then deleteFile(collectID) end
     if fileExists(storeID) then deleteFile(storeID) end
-    createWebhook(bot.index, bots)
-    botStatic()
-    selectWorld()
+
     reconnect()
     sleep((bot.index - 1) * (delayExecute * 1000))
     creatingForMessage()
+    createWebhook(bot.index, bots)
+    botStatic()
+    selectWorld()
     while true do
         takeItem()
         dropItem()
