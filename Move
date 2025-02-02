@@ -445,10 +445,10 @@ local function tilecache(x, y, num)
     return stack < 20 and count <= (4000 - num)
 end
 
-local function customTiles()
+local function customTiles(ex, ye)
     local tiles = {}
-    for y = dropY, 0, -1 do
-        for x = dropX, 98 do
+    for y = ye, 0, -1 do
+        for x = ex, 98 do
             table.insert(tiles, { x = x, y = y })
         end
     end
@@ -584,13 +584,12 @@ local function restore()
     if not nuked then
         if not wrong then
             restoreItemID()
-            local tiles = customTiles()
-            shuffle(tiles)
+            local tiles = shuffle(customTiles(1, 50))
             local foundPath = true
             while foundPath do
                 for i, v in ipairs(itemID) do
                     for _, tile in pairs(tiles) do
-                        while not bot:isInTile(tile.x, tile.y) do
+                        while not bot:isInTile(tile.x, tile.y) and isCanFindpath(tile.x, tile.y) do
                             bot:findPath(tile.x, tile.y)
                             reposition(world, door, tile.x, tile.y)
                         end
@@ -602,6 +601,7 @@ local function restore()
                                 reposition(world, door, tile.x, tile.y)
                             end
                         end
+                        tiles = shuffle(customTiles(1, 50))
                         if backpack(v.id) == 0 then
                             foundPath = false
                             break
@@ -647,7 +647,7 @@ local function dropItem()
             botInfo(storeMessageID, false)
             scanLimits()
             if scanValue() then
-                local tiles = customTiles()
+                local tiles = customTiles(dropX, dropY)
                 local function isItemFinished(v)
                     return backpack(v.id) == 0
                 end
